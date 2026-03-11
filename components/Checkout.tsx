@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 import QRCode from 'qrcode';
+import { gemini } from '../geminiService';
 
 const A4_WIDTH_PX = 794;
 const A4_HEIGHT_PX = 1123;
@@ -132,6 +133,20 @@ const buildPdf = async (element: HTMLElement, filename: string) => {
   return url;
 };
 
+const ensureDataUrl = async (src: string) => {
+  if (!src) return '';
+  if (src.startsWith('data:')) return src;
+  const response = await fetch(src);
+  if (!response.ok) throw new Error('图案加载失败');
+  const blob = await response.blob();
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('图案读取失败'));
+    reader.onloadend = () => resolve(reader.result as string);
+    reader.readAsDataURL(blob);
+  });
+};
+
 const OrderTemplate: React.FC<{
   type: 'garment' | 'print';
   qrDataUrl: string;
@@ -248,6 +263,7 @@ const Checkout: React.FC<{ previewImages?: PreviewImages }> = ({ previewImages }
   const [isExporting, setIsExporting] = useState(false);
   const [preview, setPreview] = useState<PreviewType>(null);
   const [pdfUrls, setPdfUrls] = useState<PdfUrls>({});
+  const [enhancedPreviews, setEnhancedPreviews] = useState<PreviewImages | null>(null);
 
   const [view, setView] = useState<CheckoutView>('checkout');
   const [deliveryMode, setDeliveryMode] = useState<DeliveryMode>('delivery');
@@ -274,6 +290,7 @@ const Checkout: React.FC<{ previewImages?: PreviewImages }> = ({ previewImages }
   const unitPrice = 78;
   const totalQty = Object.values(quantities).reduce((sum, qty) => sum + qty, 0);
   const totalPrice = unitPrice * totalQty;
+  const effectivePreviews = useMemo(() => enhancedPreviews ?? previewImages ?? {}, [enhancedPreviews, previewImages]);
   const orderSizes = useMemo(() => {
     const next: Record<string, number> = {};
     SIZE_OPTIONS.forEach((size) => {
@@ -290,11 +307,11 @@ const Checkout: React.FC<{ previewImages?: PreviewImages }> = ({ previewImages }
 
   const positions = useMemo(() => {
     const list: string[] = [];
-    if (previewImages?.front) list.push('前');
-    if (previewImages?.back) list.push('后');
-    if (previewImages?.side) list.push('侧');
+    if (effectivePreviews?.front) list.push('前');
+    if (effectivePreviews?.back) list.push('后');
+    if (effectivePreviews?.side) list.push('侧');
     return list.length ? list : ['前'];
-  }, [previewImages]);
+  }, [effectivePreviews]);
 
   const orderData = useMemo<OrderData>(() => {
     const receiver = address.name || mockOrder.receiver;
@@ -316,19 +333,58 @@ const Checkout: React.FC<{ previewImages?: PreviewImages }> = ({ previewImages }
       sizes: orderSizes,
       printPositions: positions,
       printSize: mockOrder.printSize,
-      designPreviewUrl: previewImages?.front || mockOrder.designPreviewUrl,
-      designBackUrl: previewImages?.back || mockOrder.designBackUrl,
-      designSideUrl: previewImages?.side,
+      designPreviewUrl: effectivePreviews?.front || mockOrder.designPreviewUrl,
+      designBackUrl: effectivePreviews?.back || mockOrder.designBackUrl,
+      designSideUrl: effectivePreviews?.side,
       designDownloadUrl: mockOrder.designDownloadUrl,
       notes: notes || mockOrder.notes,
     };
-  }, [address, deliveryMode, orderSizes, positions, previewImages, notes]);
+  }, [address, deliveryMode, orderSizes, positions, effectivePreviews, notes]);
 
   useEffect(() => {
     QRCode.toDataURL(mockOrder.designDownloadUrl, { width: 160, margin: 1 })
       .then(setQrDataUrl)
       .catch(() => setQrDataUrl(''));
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      if (!previewImages?.front && !previewImages?.back) {
+        setEnhancedPreviews(null);
+        return;
+      }
+
+      setEnhancedPreviews({ ...previewImages });
+
+      const generate = async (side: 'front' | 'back', garmentType: '前' | '后') => {
+        const source = side === 'front' ? previewImages?.front : previewImages?.back;
+        if (!source) return;
+        try {
+          const dataUrl = await ensureDataUrl(source);
+          const result = await gemini.generateMockup(dataUrl, garmentType);
+          if (cancelled) return;
+          setEnhancedPreviews((prev) => ({
+            ...(prev ?? {}),
+            [side]: result,
+            side: previewImages?.side ?? prev?.side,
+          }));
+        } catch (error) {
+          console.error(`生成${side === 'front' ? '正' : '背'}面上身图失败`, error);
+        }
+      };
+
+      await Promise.all([
+        generate('front', '前'),
+        generate('back', '后'),
+      ]);
+    };
+
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [previewImages?.front, previewImages?.back, previewImages?.side]);
 
   const handleExportAll = async () => {
     if (!garmentRef.current || !printRef.current) return;
