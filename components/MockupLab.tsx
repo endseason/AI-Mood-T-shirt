@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Check, Loader2, Maximize2, Move, RotateCw, Wand2 } from 'lucide-react';
+import { ArrowLeftRight, ArrowUpDown, Check, Loader2, Move, RotateCw, Upload, Trash2, Wand2 } from 'lucide-react';
 import { REFINEMENT_TAGS } from '../constants';
 import { gemini } from '../geminiService';
 
@@ -20,15 +20,26 @@ type StageSize = { w: number; h: number };
 
 type DesignPos = { x: number; y: number };
 
-type DragMode = 'move' | 'scale' | 'rotate';
+type DragMode = 'move' | 'scale-x' | 'scale-y' | 'rotate' | 'crop-tl' | 'crop-tr' | 'crop-bl' | 'crop-br';
 
 type DragState = {
   mode: DragMode;
   startX: number;
   startY: number;
   startPos: DesignPos;
-  startScale: number;
+  startScaleX: number;
+  startScaleY: number;
   startRotate: number;
+  startCrop: CropInsets;
+  startWidth: number;
+  startHeight: number;
+};
+
+type CropInsets = {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
 };
 
 const CHEST_ANCHOR_DEFAULT: Record<PositionType, { x: number; y: number }> = {
@@ -62,6 +73,11 @@ const clamp = (value: number, min: number, max: number) => Math.min(max, Math.ma
 
 const MockupLab: React.FC<Props> = ({ designUrl, isLoading = false, loadingText = '加载中', onNext, onBack }) => {
   const [currentDesign, setCurrentDesign] = useState(designUrl);
+  const [designMap, setDesignMap] = useState<Record<PositionType, string>>({
+    '前': '',
+    '后': '',
+    '侧': '',
+  });
   const [mockupImage, setMockupImage] = useState<string | null>(null);
   const [positionType, setPositionType] = useState<PositionType>('前');
   const [isUpdating, setIsUpdating] = useState(false);
@@ -70,14 +86,20 @@ const MockupLab: React.FC<Props> = ({ designUrl, isLoading = false, loadingText 
 
   const [stage, setStage] = useState<StageSize>({ w: 0, h: 0 });
   const [designPos, setDesignPos] = useState<DesignPos>({ x: 0.5, y: 0.45 });
-  const [designScale, setDesignScale] = useState(DEFAULT_SCALE['前']);
+  const [designScaleX, setDesignScaleX] = useState(DEFAULT_SCALE['前']);
+  const [designScaleY, setDesignScaleY] = useState(DEFAULT_SCALE['前']);
   const [designRotate, setDesignRotate] = useState(0);
   const [designPosMap, setDesignPosMap] = useState<Record<PositionType, DesignPos>>({
     '前': { x: 0.5, y: 0.38 },
     '后': { x: 0.5, y: 0.36 },
     '侧': { x: 0.55, y: 0.4 },
   });
-  const [designScaleMap, setDesignScaleMap] = useState<Record<PositionType, number>>({
+  const [designScaleXMap, setDesignScaleXMap] = useState<Record<PositionType, number>>({
+    '前': DEFAULT_SCALE['前'],
+    '后': DEFAULT_SCALE['后'],
+    '侧': DEFAULT_SCALE['侧'],
+  });
+  const [designScaleYMap, setDesignScaleYMap] = useState<Record<PositionType, number>>({
     '前': DEFAULT_SCALE['前'],
     '后': DEFAULT_SCALE['后'],
     '侧': DEFAULT_SCALE['侧'],
@@ -87,6 +109,12 @@ const MockupLab: React.FC<Props> = ({ designUrl, isLoading = false, loadingText 
     '后': 0,
     '侧': 0,
   });
+  const [cropMap, setCropMap] = useState<Record<PositionType, CropInsets>>({
+    '前': { top: 0, right: 0, bottom: 0, left: 0 },
+    '后': { top: 0, right: 0, bottom: 0, left: 0 },
+    '侧': { top: 0, right: 0, bottom: 0, left: 0 },
+  });
+  const [cropInsets, setCropInsets] = useState<CropInsets>({ top: 0, right: 0, bottom: 0, left: 0 });
   const [touchedPositions, setTouchedPositions] = useState<Record<PositionType, boolean>>({
     '前': true,
     '后': false,
@@ -94,10 +122,15 @@ const MockupLab: React.FC<Props> = ({ designUrl, isLoading = false, loadingText 
   });
 
   const stageRef = useRef<HTMLDivElement>(null);
+  const baseRecipeRef = useRef<string>('');
   const dragRef = useRef<DragState | null>(null);
 
   useEffect(() => {
+    if (!designUrl) return;
+    baseRecipeRef.current = designUrl;
     setCurrentDesign(designUrl);
+    setDesignMap((prev) => ({ ...prev, '前': designUrl }));
+    setTouchedPositions((prev) => ({ ...prev, '前': true }));
   }, [designUrl]);
 
   useEffect(() => {
@@ -120,9 +153,12 @@ const MockupLab: React.FC<Props> = ({ designUrl, isLoading = false, loadingText 
 
   useEffect(() => {
     setDesignPos(designPosMap[positionType]);
-    setDesignScale(designScaleMap[positionType]);
+    setDesignScaleX(designScaleXMap[positionType]);
+    setDesignScaleY(designScaleYMap[positionType]);
     setDesignRotate(designRotateMap[positionType]);
-  }, [positionType, designPosMap, designScaleMap, designRotateMap]);
+    setCropInsets(cropMap[positionType]);
+    setCurrentDesign(designMap[positionType] || '');
+  }, [positionType, designPosMap, designScaleXMap, designScaleYMap, designRotateMap, cropMap, designMap]);
 
   const baseSize = useMemo(() => {
     if (!stage.w || !stage.h) return 0;
@@ -141,26 +177,36 @@ const MockupLab: React.FC<Props> = ({ designUrl, isLoading = false, loadingText 
     };
   }, [stage, positionType]);
 
-  const minScale = useMemo(() => {
-    if (!baseSize || !safeBox.w || !safeBox.h) return 0.5;
-    const minByWidth = (safeBox.w * 0.5) / baseSize;
-    const minByHeight = (safeBox.h * 0.5) / baseSize;
-    return clamp(Math.min(minByWidth, minByHeight), 0.3, 2);
+  const minScaleX = useMemo(() => {
+    if (!baseSize || !safeBox.w) return 0.5;
+    return clamp((safeBox.w * 0.5) / baseSize, 0.3, 2);
   }, [baseSize, safeBox]);
 
-  const maxScale = useMemo(() => {
-    if (!baseSize || !safeBox.w || !safeBox.h) return 1.6;
-    const maxByWidth = (safeBox.w * 0.98) / baseSize;
-    const maxByHeight = (safeBox.h * 0.98) / baseSize;
-    return clamp(Math.min(maxByWidth, maxByHeight), 0.6, 2.5);
+  const minScaleY = useMemo(() => {
+    if (!baseSize || !safeBox.h) return 0.5;
+    return clamp((safeBox.h * 0.5) / baseSize, 0.3, 2);
   }, [baseSize, safeBox]);
 
-  const clampCenterToSafe = (x: number, y: number, size: number) => {
-    const half = size / 2;
-    const minX = safeBox.left + half;
-    const maxX = safeBox.left + safeBox.w - half;
-    const minY = safeBox.top + half;
-    const maxY = safeBox.top + safeBox.h - half;
+  const maxScaleX = useMemo(() => {
+    if (!baseSize || !safeBox.w) return 1.6;
+    return clamp((safeBox.w * 0.98) / baseSize, 0.6, 2.5);
+  }, [baseSize, safeBox]);
+
+  const maxScaleY = useMemo(() => {
+    if (!baseSize || !safeBox.h) return 1.6;
+    return clamp((safeBox.h * 0.98) / baseSize, 0.6, 2.5);
+  }, [baseSize, safeBox]);
+
+  const uniformMinScale = Math.min(minScaleX, minScaleY);
+  const uniformMaxScale = Math.min(maxScaleX, maxScaleY);
+
+  const clampCenterToSafe = (x: number, y: number, width: number, height: number) => {
+    const halfW = width / 2;
+    const halfH = height / 2;
+    const minX = safeBox.left + halfW;
+    const maxX = safeBox.left + safeBox.w - halfW;
+    const minY = safeBox.top + halfH;
+    const maxY = safeBox.top + safeBox.h - halfH;
     return {
       x: clamp(x, minX, maxX),
       y: clamp(y, minY, maxY),
@@ -168,18 +214,19 @@ const MockupLab: React.FC<Props> = ({ designUrl, isLoading = false, loadingText 
   };
 
   const designStyle = useMemo(() => {
-    const size = baseSize * designScale;
-    const center = clampCenterToSafe(stage.w * designPos.x, stage.h * designPos.y, size);
-    const left = center.x - size / 2;
-    const top = center.y - size / 2;
+    const width = baseSize * designScaleX;
+    const height = baseSize * designScaleY;
+    const center = clampCenterToSafe(stage.w * designPos.x, stage.h * designPos.y, width, height);
+    const left = center.x - width / 2;
+    const top = center.y - height / 2;
     return {
-      width: `${size}px`,
-      height: `${size}px`,
+      width: `${width}px`,
+      height: `${height}px`,
       transform: `rotate(${designRotate}deg)`,
       left: `${left}px`,
       top: `${top}px`,
     } as React.CSSProperties;
-  }, [baseSize, designScale, designPos, designRotate, stage, safeBox]);
+  }, [baseSize, designScaleX, designScaleY, designPos, designRotate, stage, safeBox]);
 
   const startDrag = (mode: DragMode, e: React.PointerEvent) => {
     if (!stage.w || !stage.h) return;
@@ -188,13 +235,19 @@ const MockupLab: React.FC<Props> = ({ designUrl, isLoading = false, loadingText 
     }
     e.stopPropagation();
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    const width = baseSize * designScaleX;
+    const height = baseSize * designScaleY;
     dragRef.current = {
       mode,
       startX: e.clientX,
       startY: e.clientY,
       startPos: { ...designPos },
-      startScale: designScale,
+      startScaleX: designScaleX,
+      startScaleY: designScaleY,
       startRotate: designRotate,
+      startCrop: { ...cropInsets },
+      startWidth: width,
+      startHeight: height,
     };
   };
 
@@ -211,16 +264,24 @@ const MockupLab: React.FC<Props> = ({ designUrl, isLoading = false, loadingText 
     if (drag.mode === 'move') {
       const nextX = drag.startPos.x + dx / stage.w;
       const nextY = drag.startPos.y + dy / stage.h;
-      const size = baseSize * designScale;
-      const center = clampCenterToSafe(nextX * stage.w, nextY * stage.h, size);
+      const width = baseSize * designScaleX;
+      const height = baseSize * designScaleY;
+      const center = clampCenterToSafe(nextX * stage.w, nextY * stage.h, width, height);
       setDesignPos({ x: center.x / stage.w, y: center.y / stage.h });
       return;
     }
 
-    if (drag.mode === 'scale') {
-      const delta = (dx + dy) / Math.max(stage.w, stage.h);
-      const nextScale = clamp(drag.startScale + delta * 0.9, minScale, maxScale);
-      setDesignScale(nextScale);
+    if (drag.mode === 'scale-x') {
+      const delta = dx / stage.w;
+      const nextScaleX = clamp(drag.startScaleX + delta * 1.2, minScaleX, maxScaleX);
+      setDesignScaleX(nextScaleX);
+      return;
+    }
+
+    if (drag.mode === 'scale-y') {
+      const delta = dy / stage.h;
+      const nextScaleY = clamp(drag.startScaleY + delta * 1.2, minScaleY, maxScaleY);
+      setDesignScaleY(nextScaleY);
       return;
     }
 
@@ -231,6 +292,42 @@ const MockupLab: React.FC<Props> = ({ designUrl, isLoading = false, loadingText 
       const angleNow = Math.atan2(e.clientY - centerY, e.clientX - centerX);
       const deltaDeg = ((angleNow - angleStart) * 180) / Math.PI;
       setDesignRotate(clamp(drag.startRotate + deltaDeg, -30, 30));
+      return;
+    }
+
+    if (drag.mode.startsWith('crop')) {
+      const next = { ...drag.startCrop };
+      const dxRatio = drag.startWidth ? dx / drag.startWidth : 0;
+      const dyRatio = drag.startHeight ? dy / drag.startHeight : 0;
+      if (drag.mode === 'crop-tl') {
+        next.left = clamp(drag.startCrop.left + dxRatio, 0, 0.6);
+        next.top = clamp(drag.startCrop.top + dyRatio, 0, 0.6);
+      }
+      if (drag.mode === 'crop-tr') {
+        next.right = clamp(drag.startCrop.right - dxRatio, 0, 0.6);
+        next.top = clamp(drag.startCrop.top + dyRatio, 0, 0.6);
+      }
+      if (drag.mode === 'crop-bl') {
+        next.left = clamp(drag.startCrop.left + dxRatio, 0, 0.6);
+        next.bottom = clamp(drag.startCrop.bottom - dyRatio, 0, 0.6);
+      }
+      if (drag.mode === 'crop-br') {
+        next.right = clamp(drag.startCrop.right - dxRatio, 0, 0.6);
+        next.bottom = clamp(drag.startCrop.bottom - dyRatio, 0, 0.6);
+      }
+      const maxInsetX = 0.8;
+      const maxInsetY = 0.8;
+      if (next.left + next.right > maxInsetX) {
+        const overflow = next.left + next.right - maxInsetX;
+        next.left = clamp(next.left - overflow / 2, 0, maxInsetX);
+        next.right = clamp(next.right - overflow / 2, 0, maxInsetX);
+      }
+      if (next.top + next.bottom > maxInsetY) {
+        const overflow = next.top + next.bottom - maxInsetY;
+        next.top = clamp(next.top - overflow / 2, 0, maxInsetY);
+        next.bottom = clamp(next.bottom - overflow / 2, 0, maxInsetY);
+      }
+      setCropInsets(next);
     }
   };
 
@@ -248,10 +345,46 @@ const MockupLab: React.FC<Props> = ({ designUrl, isLoading = false, loadingText 
     }
   };
 
+  const handleImportClick = () => {
+    const recipe = baseRecipeRef.current;
+    if (!recipe) {
+      alert('暂无可加载的配方图案');
+      return;
+    }
+    setDesignMap((prev) => ({ ...prev, [positionType]: recipe }));
+    setCurrentDesign(recipe);
+    setTouchedPositions((prev) => ({ ...prev, [positionType]: true }));
+  };
+
+  const handleDeleteDesign = () => {
+    setDesignMap((prev) => ({ ...prev, [positionType]: '' }));
+    setCurrentDesign('');
+    setTouchedPositions((prev) => ({ ...prev, [positionType]: true }));
+  };
+
+  const ensureDataUrl = async (src: string) => {
+    if (!src) return '';
+    if (src.startsWith('data:')) return src;
+    const response = await fetch(src);
+    if (!response.ok) throw new Error('图案加载失败');
+    const blob = await response.blob();
+    return new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error('图案读取失败'));
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.readAsDataURL(blob);
+    });
+  };
+
   const updateMockup = async () => {
+    if (!currentDesign) {
+      alert('请先选择或加载图案');
+      return;
+    }
     setIsUpdating(true);
     try {
-      const mockup = await gemini.generateMockup(currentDesign, positionType);
+      const designDataUrl = await ensureDataUrl(currentDesign);
+      const mockup = await gemini.generateMockup(designDataUrl, positionType);
       setMockupImage(mockup);
     } catch (e) {
       console.error('模特渲染失败', e);
@@ -261,14 +394,12 @@ const MockupLab: React.FC<Props> = ({ designUrl, isLoading = false, loadingText 
   };
 
   const handleRefine = async (instruction: string) => {
-    if (!currentDesign) {
-      onNext({ front: '', back: '', side: '' });
-      return;
-    }
+    if (!currentDesign) return;
     setIsUpdating(true);
     try {
       const prompt = `仅调整印花图案本身，不修改T恤、背景、光影或任何服装细节。调整要求：${instruction}`;
-      const result = await gemini.editDesign(currentDesign, prompt);
+      const designDataUrl = await ensureDataUrl(currentDesign);
+      const result = await gemini.editDesign(designDataUrl, prompt);
       setCurrentDesign(result);
     } catch (e) {
       alert('微调失败，请再试一次。');
@@ -283,17 +414,23 @@ const MockupLab: React.FC<Props> = ({ designUrl, isLoading = false, loadingText 
 
   const handleReset = () => {
     setDesignPos(CHEST_ANCHOR_DEFAULT[positionType]);
-    setDesignScale(DEFAULT_SCALE[positionType]);
+    setDesignScaleX(DEFAULT_SCALE[positionType]);
+    setDesignScaleY(DEFAULT_SCALE[positionType]);
     setDesignRotate(0);
+    setCropInsets({ top: 0, right: 0, bottom: 0, left: 0 });
     setDesignPosMap((prev) => ({ ...prev, [positionType]: CHEST_ANCHOR_DEFAULT[positionType] }));
-    setDesignScaleMap((prev) => ({ ...prev, [positionType]: DEFAULT_SCALE[positionType] }));
+    setDesignScaleXMap((prev) => ({ ...prev, [positionType]: DEFAULT_SCALE[positionType] }));
+    setDesignScaleYMap((prev) => ({ ...prev, [positionType]: DEFAULT_SCALE[positionType] }));
     setDesignRotateMap((prev) => ({ ...prev, [positionType]: 0 }));
+    setCropMap((prev) => ({ ...prev, [positionType]: { top: 0, right: 0, bottom: 0, left: 0 } }));
   };
 
   const persistCurrentTransform = () => {
     setDesignPosMap((prev) => ({ ...prev, [positionType]: designPos }));
-    setDesignScaleMap((prev) => ({ ...prev, [positionType]: designScale }));
+    setDesignScaleXMap((prev) => ({ ...prev, [positionType]: designScaleX }));
+    setDesignScaleYMap((prev) => ({ ...prev, [positionType]: designScaleY }));
     setDesignRotateMap((prev) => ({ ...prev, [positionType]: designRotate }));
+    setCropMap((prev) => ({ ...prev, [positionType]: cropInsets }));
   };
 
   const renderComposite = async (pos: PositionType, designSrc: string) => {
@@ -318,7 +455,8 @@ const MockupLab: React.FC<Props> = ({ designUrl, isLoading = false, loadingText 
 
     const ratio = SAFE_BOX_RATIO[pos];
     const baseSize = Math.min(canvas.width, canvas.height) * 0.46;
-    const size = baseSize * (designScaleMap[pos] ?? DEFAULT_SCALE[pos]);
+    const sizeW = baseSize * (designScaleXMap[pos] ?? DEFAULT_SCALE[pos]);
+    const sizeH = baseSize * (designScaleYMap[pos] ?? DEFAULT_SCALE[pos]);
     const centerX = canvas.width * (designPosMap[pos]?.x ?? 0.5);
     const centerY = canvas.height * (designPosMap[pos]?.y ?? 0.45);
     const safeBox = {
@@ -327,14 +465,23 @@ const MockupLab: React.FC<Props> = ({ designUrl, isLoading = false, loadingText 
       w: canvas.width * ratio.width,
       h: canvas.height * ratio.height,
     };
-    const half = size / 2;
-    const clampedX = clamp(centerX, safeBox.left + half, safeBox.left + safeBox.w - half);
-    const clampedY = clamp(centerY, safeBox.top + half, safeBox.top + safeBox.h - half);
+    const halfW = sizeW / 2;
+    const halfH = sizeH / 2;
+    const clampedX = clamp(centerX, safeBox.left + halfW, safeBox.left + safeBox.w - halfW);
+    const clampedY = clamp(centerY, safeBox.top + halfH, safeBox.top + safeBox.h - halfH);
 
     ctx.save();
     ctx.translate(clampedX, clampedY);
     ctx.rotate(((designRotateMap[pos] ?? 0) * Math.PI) / 180);
-    ctx.drawImage(designImg, -size / 2, -size / 2, size, size);
+    const crop = cropMap[pos] ?? { top: 0, right: 0, bottom: 0, left: 0 };
+    const cropX = -sizeW / 2 + crop.left * sizeW;
+    const cropY = -sizeH / 2 + crop.top * sizeH;
+    const cropW = sizeW * (1 - crop.left - crop.right);
+    const cropH = sizeH * (1 - crop.top - crop.bottom);
+    ctx.beginPath();
+    ctx.rect(cropX, cropY, cropW, cropH);
+    ctx.clip();
+    ctx.drawImage(designImg, -sizeW / 2, -sizeH / 2, sizeW, sizeH);
     ctx.restore();
 
     return canvas.toDataURL('image/png');
@@ -343,13 +490,23 @@ const MockupLab: React.FC<Props> = ({ designUrl, isLoading = false, loadingText 
   const handleProceed = async () => {
     if (!currentDesign) return;
     persistCurrentTransform();
+    const getDesign = (pos: PositionType) => designMap[pos] || (pos === positionType ? currentDesign : '');
     const results: Record<string, string> = { front: '', back: '', side: '' };
-    results.front = await renderComposite('前', currentDesign);
+    const frontDesign = getDesign('前');
+    if (frontDesign) {
+      results.front = await renderComposite('前', frontDesign);
+    }
     if (touchedPositions['后']) {
-      results.back = await renderComposite('后', currentDesign);
+      const backDesign = getDesign('后');
+      if (backDesign) {
+        results.back = await renderComposite('后', backDesign);
+      }
     }
     if (touchedPositions['侧']) {
-      results.side = await renderComposite('侧', currentDesign);
+      const sideDesign = getDesign('侧');
+      if (sideDesign) {
+        results.side = await renderComposite('侧', sideDesign);
+      }
     }
     onNext(results);
   };
@@ -400,11 +557,11 @@ const MockupLab: React.FC<Props> = ({ designUrl, isLoading = false, loadingText 
                       alt="图案预览"
                       onPointerDown={(e) => startDrag('move', e)}
                       className="absolute inset-0 w-full h-full cursor-move select-none mix-blend-multiply touch-none"
+                      style={{
+                        clipPath: `inset(${cropInsets.top * 100}% ${cropInsets.right * 100}% ${cropInsets.bottom * 100}% ${cropInsets.left * 100}%)`,
+                      }}
                       draggable={false}
                     />
-                    <div className="absolute top-2 left-2 p-1 rounded-md bg-white/90 border border-[#0057FF]/50 text-[#0057FF] pointer-events-none">
-                      <Move size={14} />
-                    </div>
 
                     <div className="absolute -top-3 left-1/2 -translate-x-1/2">
                       <button
@@ -416,19 +573,97 @@ const MockupLab: React.FC<Props> = ({ designUrl, isLoading = false, loadingText 
                       </button>
                     </div>
 
-                    <div className="absolute -bottom-3 -right-3">
+                    <div className="absolute -right-3 top-1/2 -translate-y-1/2">
                       <button
                         type="button"
-                        onPointerDown={(e) => startDrag('scale', e)}
-                        className="w-7 h-7 rounded-full border border-[#0057FF] bg-white text-[#0057FF] shadow-sm cursor-nwse-resize touch-none flex items-center justify-center"
+                        onPointerDown={(e) => startDrag('scale-x', e)}
+                        className="w-7 h-7 rounded-full border border-[#0057FF] bg-white text-[#0057FF] shadow-sm cursor-ew-resize touch-none flex items-center justify-center"
                       >
-                        <Maximize2 size={14} />
+                        <ArrowLeftRight size={14} />
                       </button>
                     </div>
+
+                    <div className="absolute -bottom-3 left-1/2 -translate-x-1/2">
+                      <button
+                        type="button"
+                        onPointerDown={(e) => startDrag('scale-y', e)}
+                        className="w-7 h-7 rounded-full border border-[#0057FF] bg-white text-[#0057FF] shadow-sm cursor-ns-resize touch-none flex items-center justify-center"
+                      >
+                        <ArrowUpDown size={14} />
+                      </button>
+                    </div>
+
+                    <div
+                      className="absolute border border-dashed border-[#0057FF]/70 rounded-md pointer-events-none"
+                      style={{
+                        left: `${cropInsets.left * 100}%`,
+                        top: `${cropInsets.top * 100}%`,
+                        width: `${(1 - cropInsets.left - cropInsets.right) * 100}%`,
+                        height: `${(1 - cropInsets.top - cropInsets.bottom) * 100}%`,
+                      }}
+                    />
+                    {[
+                      { key: 'crop-tl', style: { left: `${cropInsets.left * 100}%`, top: `${cropInsets.top * 100}%` }, cursor: 'nwse-resize' },
+                      { key: 'crop-tr', style: { right: `${cropInsets.right * 100}%`, top: `${cropInsets.top * 100}%` }, cursor: 'nesw-resize' },
+                      { key: 'crop-bl', style: { left: `${cropInsets.left * 100}%`, bottom: `${cropInsets.bottom * 100}%` }, cursor: 'nesw-resize' },
+                      { key: 'crop-br', style: { right: `${cropInsets.right * 100}%`, bottom: `${cropInsets.bottom * 100}%` }, cursor: 'nwse-resize' },
+                    ].map((handle) => (
+                      <button
+                        key={handle.key}
+                        type="button"
+                        onPointerDown={(e) => startDrag(handle.key as DragMode, e)}
+                        className="absolute w-3 h-3 bg-white border border-[#0057FF] rounded-sm shadow-sm touch-none"
+                        style={{
+                          transform: 'translate(-50%, -50%)',
+                          cursor: handle.cursor,
+                          ...handle.style,
+                        }}
+                      />
+                    ))}
 
                     <div className="absolute inset-0 border border-[#0057FF]/60 rounded-lg pointer-events-none" />
                   </div>
                 ) : null}
+                {!currentDesign && (
+                  <div
+                    className="absolute flex flex-col items-center justify-center gap-2 text-[#0057FF]"
+                    style={{
+                      left: `${safeBox.left}px`,
+                      top: `${safeBox.top}px`,
+                      width: `${safeBox.w}px`,
+                      height: `${safeBox.h}px`,
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={handleImportClick}
+                      className="w-10 h-10 rounded-full border border-[#0057FF] bg-white text-[#0057FF] shadow-sm flex items-center justify-center"
+                    >
+                      <Upload size={18} />
+                    </button>
+                    <span className="text-xs font-mono">加载图案</span>
+                  </div>
+                )}
+                {currentDesign && (
+                  <div className="absolute top-2 right-2 flex gap-2">
+                    <button
+                      type="button"
+                      onClick={handleImportClick}
+                      className="w-7 h-7 rounded-full border border-[#0057FF] bg-white text-[#0057FF] shadow-sm touch-none flex items-center justify-center"
+                      title="导入图案"
+                    >
+                      <Upload size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleDeleteDesign}
+                      className="w-7 h-7 rounded-full border border-black/20 bg-white text-black/70 shadow-sm touch-none flex items-center justify-center"
+                      title="删除图案"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                )}
               </div>
             )}
 
@@ -483,6 +718,28 @@ const MockupLab: React.FC<Props> = ({ designUrl, isLoading = false, loadingText 
               </button>
             ))}
           </div>
+
+          <div className="w-full mt-6 space-y-4">
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => setViewMode('2D')}
+                className={`py-2 rounded-xl text-sm font-medium border ${
+                  viewMode === '2D' ? 'bg-black text-white border-black' : 'border-black/10 hover:bg-gray-50'
+                }`}
+              >
+                二维预览
+              </button>
+              <button
+                onClick={handleGenerate3D}
+                disabled={isUpdating}
+                className={`py-2 rounded-xl text-sm font-medium border ${
+                  viewMode === '3D' ? 'bg-black text-white border-black' : 'border-black/10 hover:bg-gray-50'
+                }`}
+              >
+                生成上身大片
+              </button>
+            </div>
+          </div>
         </div>
 
         <div className="w-full p-4 flex flex-col bg-white border-t border-black/10">
@@ -533,62 +790,6 @@ const MockupLab: React.FC<Props> = ({ designUrl, isLoading = false, loadingText 
               ))}
             </div>
 
-            <div className="p-4 border border-black/10 rounded-xl bg-white">
-              <div className="flex items-center justify-between text-[10px] font-mono text-zinc-500 mb-2">
-                <span>图案操作</span>
-                <button onClick={handleReset} className="text-[#0057FF]">重置</button>
-              </div>
-              <div className="space-y-3">
-                <label className="flex items-center justify-between text-xs text-zinc-600">
-                  缩放
-                  <span className="font-mono text-[10px]">{designScale.toFixed(2)} 倍</span>
-                </label>
-                <input
-                  type="range"
-                  min={minScale}
-                  max={maxScale}
-                  step={0.02}
-                  value={designScale}
-                  onChange={(e) => setDesignScale(Number(e.target.value))}
-                  className="w-full"
-                />
-              </div>
-              <div className="space-y-3 mt-4">
-                <label className="flex items-center justify-between text-xs text-zinc-600">
-                  旋转
-                  <span className="font-mono text-[10px]">{designRotate}°</span>
-                </label>
-                <input
-                  type="range"
-                  min={-30}
-                  max={30}
-                  step={1}
-                  value={designRotate}
-                  onChange={(e) => setDesignRotate(Number(e.target.value))}
-                  className="w-full"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                onClick={() => setViewMode('2D')}
-                className={`py-2 rounded-xl text-sm font-medium border ${
-                  viewMode === '2D' ? 'bg-black text-white border-black' : 'border-black/10 hover:bg-gray-50'
-                }`}
-              >
-                二维预览
-              </button>
-              <button
-                onClick={handleGenerate3D}
-                disabled={isUpdating}
-                className={`py-2 rounded-xl text-sm font-medium border ${
-                  viewMode === '3D' ? 'bg-black text-white border-black' : 'border-black/10 hover:bg-gray-50'
-                }`}
-              >
-                生成上身大片
-              </button>
-            </div>
           </div>
 
           <div className="mt-auto pt-8 border-t border-black/10">
