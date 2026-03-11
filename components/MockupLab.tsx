@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowLeft, Check, Loader2, Move, Wand2 } from 'lucide-react';
+import { ArrowLeft, Check, Loader2, Maximize2, Move, RotateCw, Wand2 } from 'lucide-react';
 import { REFINEMENT_TAGS } from '../constants';
 import { gemini } from '../geminiService';
 
@@ -188,8 +188,8 @@ const MockupLab: React.FC<Props> = ({ designUrl, onNext, onBack }) => {
     }
 
     if (drag.mode === 'scale') {
-      const delta = (dx - dy) / Math.max(stage.w, stage.h);
-      const nextScale = clamp(drag.startScale + delta * 1.2, minScale, maxScale);
+      const delta = (dx + dy) / Math.max(stage.w, stage.h);
+      const nextScale = clamp(drag.startScale + delta * 0.9, minScale, maxScale);
       setDesignScale(nextScale);
       return;
     }
@@ -307,14 +307,17 @@ const MockupLab: React.FC<Props> = ({ designUrl, onNext, onBack }) => {
                       className="absolute inset-0 w-full h-full cursor-move select-none mix-blend-multiply touch-none"
                       draggable={false}
                     />
+                    <div className="absolute top-2 left-2 p-1 rounded-md bg-white/90 border border-[#0057FF]/50 text-[#0057FF] pointer-events-none">
+                      <Move size={14} />
+                    </div>
 
                     <div className="absolute -top-3 left-1/2 -translate-x-1/2">
                       <button
                         type="button"
                         onPointerDown={(e) => startDrag('rotate', e)}
-                        className="w-6 h-6 rounded-full border border-[#0057FF] bg-white text-[10px] font-mono text-[#0057FF] shadow-sm cursor-grab touch-none"
+                        className="w-7 h-7 rounded-full border border-[#0057FF] bg-white text-[#0057FF] shadow-sm cursor-grab touch-none flex items-center justify-center"
                       >
-                        旋
+                        <RotateCw size={14} />
                       </button>
                     </div>
 
@@ -322,9 +325,9 @@ const MockupLab: React.FC<Props> = ({ designUrl, onNext, onBack }) => {
                       <button
                         type="button"
                         onPointerDown={(e) => startDrag('scale', e)}
-                        className="w-6 h-6 rounded-full border border-[#0057FF] bg-white text-[10px] font-mono text-[#0057FF] shadow-sm cursor-nwse-resize touch-none"
+                        className="w-7 h-7 rounded-full border border-[#0057FF] bg-white text-[#0057FF] shadow-sm cursor-nwse-resize touch-none flex items-center justify-center"
                       >
-                        拉
+                        <Maximize2 size={14} />
                       </button>
                     </div>
 
