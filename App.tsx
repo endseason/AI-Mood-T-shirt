@@ -19,8 +19,9 @@ const App: React.FC = () => {
     setView('CHAT');
   };
 
-  const handleRecipeSelection = (imageUrl: string) => {
-    setDesignUrl(imageUrl);
+  const handleRecipeSelection = (imageUrl: string, id?: string) => {
+    const recipeUrl = id ? `/images/${id}.jpg` : imageUrl;
+    setDesignUrl(recipeUrl);
     setIsRecipeLoading(false);
     setView('EDITOR');
   };
@@ -39,7 +40,7 @@ const App: React.FC = () => {
   return (
     <Layout activeView={view} onViewChange={setView}>
       {view === 'LANDING' && (
-        <InspirationFlow onSelect={(imageUrl, _id) => handleRecipeSelection(imageUrl)} />
+        <InspirationFlow onSelect={(imageUrl, id) => handleRecipeSelection(imageUrl, id)} />
       )}
 
       {view === 'CHAT' && (
@@ -60,7 +61,7 @@ const App: React.FC = () => {
       )}
 
       {view === 'CHECKOUT' && (
-        <Checkout previewImages={previewImages} />
+        <Checkout previewImages={previewImages} onBack={() => setView('EDITOR')} />
       )}
     </Layout>
   );

@@ -6,6 +6,7 @@ import { gemini } from '../geminiService';
 
 const A4_WIDTH_PX = 794;
 const A4_HEIGHT_PX = 1123;
+const MIN_SPINNER_MS = 3000;
 
 const mockOrder = {
   orderNo: 'GD-20260311-0001',
@@ -255,7 +256,7 @@ const OrderTemplate: React.FC<{
   );
 };
 
-const Checkout: React.FC<{ previewImages?: PreviewImages }> = ({ previewImages }) => {
+const Checkout: React.FC<{ previewImages?: PreviewImages; onBack?: () => void }> = ({ previewImages, onBack }) => {
   const garmentRef = useRef<HTMLDivElement>(null);
   const printRef = useRef<HTMLDivElement>(null);
 
@@ -264,6 +265,9 @@ const Checkout: React.FC<{ previewImages?: PreviewImages }> = ({ previewImages }
   const [preview, setPreview] = useState<PreviewType>(null);
   const [pdfUrls, setPdfUrls] = useState<PdfUrls>({});
   const [enhancedPreviews, setEnhancedPreviews] = useState<PreviewImages | null>(null);
+  const [mockupStatus, setMockupStatus] = useState({ front: false, back: false });
+  const mockupStartRef = useRef({ front: 0, back: 0 });
+  const mockupTimerRef = useRef<{ front?: number; back?: number }>({});
 
   const [view, setView] = useState<CheckoutView>('checkout');
   const [deliveryMode, setDeliveryMode] = useState<DeliveryMode>('delivery');
@@ -359,7 +363,12 @@ const Checkout: React.FC<{ previewImages?: PreviewImages }> = ({ previewImages }
 
       const generate = async (side: 'front' | 'back', garmentType: '前' | '后') => {
         const source = side === 'front' ? previewImages?.front : previewImages?.back;
-        if (!source) return;
+        if (!source) {
+          return;
+        }
+        mockupStartRef.current[side] = Date.now();
+        setMockupStatus((prev) => ({ ...prev, [side]: true }));
+        await new Promise((resolve) => setTimeout(resolve, 50));
         try {
           const dataUrl = await ensureDataUrl(source);
           const result = await gemini.generateMockup(dataUrl, garmentType);
@@ -371,6 +380,17 @@ const Checkout: React.FC<{ previewImages?: PreviewImages }> = ({ previewImages }
           }));
         } catch (error) {
           console.error(`生成${side === 'front' ? '正' : '背'}面上身图失败`, error);
+        } finally {
+          if (!cancelled) {
+            const elapsed = Date.now() - mockupStartRef.current[side];
+            const remaining = Math.max(0, MIN_SPINNER_MS - elapsed);
+            const timer = window.setTimeout(() => {
+              if (!cancelled) {
+                setMockupStatus((prev) => ({ ...prev, [side]: false }));
+              }
+            }, remaining);
+            mockupTimerRef.current[side] = timer;
+          }
         }
       };
 
@@ -383,8 +403,15 @@ const Checkout: React.FC<{ previewImages?: PreviewImages }> = ({ previewImages }
     run();
     return () => {
       cancelled = true;
+      if (mockupTimerRef.current.front) {
+        window.clearTimeout(mockupTimerRef.current.front);
+      }
+      if (mockupTimerRef.current.back) {
+        window.clearTimeout(mockupTimerRef.current.back);
+      }
     };
   }, [previewImages?.front, previewImages?.back, previewImages?.side]);
+
 
   const handleExportAll = async () => {
     if (!garmentRef.current || !printRef.current) return;
@@ -525,9 +552,19 @@ const Checkout: React.FC<{ previewImages?: PreviewImages }> = ({ previewImages }
 
   return (
     <div className="p-6 pb-24 space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
-      <div className="space-y-2">
-        <h2 className="text-3xl font-black italic">选择尺码</h2>
-        <p className="text-xs text-zinc-500 font-mono tracking-widest">智能规格 · 即时生产</p>
+      <div className="flex items-start justify-between gap-4">
+        <div className="space-y-2">
+          <h2 className="text-3xl font-black italic">选择尺码</h2>
+          <p className="text-xs text-zinc-500 font-mono tracking-widest">智能规格 · 即时生产</p>
+        </div>
+        {onBack && (
+          <button
+            onClick={onBack}
+            className="h-9 px-4 rounded-full border border-black/10 text-xs font-mono hover:border-[#0057FF] hover:text-[#0057FF] transition-colors"
+          >
+            ← 返回编辑
+          </button>
+        )}
       </div>
 
       <div className="bg-white rounded-3xl border border-black/10 p-4 space-y-4">
@@ -552,14 +589,25 @@ const Checkout: React.FC<{ previewImages?: PreviewImages }> = ({ previewImages }
           </div>
         </div>
         <div className="grid grid-cols-2 gap-4">
-          <div className="rounded-2xl bg-zinc-50 border border-black/5 p-4 flex items-center justify-center">
+          <div className="rounded-2xl bg-zinc-50 border border-black/5 p-4 flex items-center justify-center relative overflow-hidden">
             <img
               src={previewSide === 'front' ? orderData.designPreviewUrl : orderData.designBackUrl}
               alt="预览"
               className="w-full max-w-[140px]"
             />
-          </div>
-          <div className="space-y-3">
+          {((previewSide === 'front' && mockupStatus.front) || (previewSide === 'back' && mockupStatus.back)) && (
+            <div className="absolute top-3 right-3 px-2 py-1 bg-[#0057FF] text-white text-[10px] font-mono tracking-widest rounded-full shadow z-10">
+              生成中
+            </div>
+          )}
+          {((previewSide === 'front' && mockupStatus.front) || (previewSide === 'back' && mockupStatus.back)) && (
+            <div className="absolute inset-0 bg-white/70 flex flex-col items-center justify-center text-[#0057FF] z-10">
+              <div className="w-5 h-5 border-2 border-[#0057FF] border-t-transparent rounded-full animate-spin" />
+              <span className="mt-2 text-[10px] font-mono tracking-widest">生成中…</span>
+            </div>
+          )}
+        </div>
+        <div className="space-y-3">
             <div className="flex items-center justify-between">
               <button
                 onClick={() => setShowSizeGuide((prev) => !prev)}
@@ -620,7 +668,6 @@ const Checkout: React.FC<{ previewImages?: PreviewImages }> = ({ previewImages }
           </div>
         </div>
       </div>
-
       <div className="bg-white rounded-2xl border border-black/10 p-4 space-y-3">
         <div className="flex gap-2">
           <button

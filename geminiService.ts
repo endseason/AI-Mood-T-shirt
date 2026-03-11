@@ -1,5 +1,22 @@
 
 export class GeminiService {
+  private async parseError(response: Response): Promise<string> {
+    const prefix = `HTTP ${response.status} ${response.statusText}`.trim();
+    try {
+      const data = await response.json();
+      if (data?.error) return `${prefix} - ${data.error}`;
+      return prefix || 'Request failed';
+    } catch {
+      try {
+        const text = await response.text();
+        if (text) return `${prefix} - ${text}`;
+        return prefix || 'Request failed';
+      } catch {
+        return prefix || 'Request failed';
+      }
+    }
+  }
+
   async generateSketches(prompt: string, vibe: string): Promise<string[]> {
     const response = await fetch('/api/sketches', {
       method: 'POST',
@@ -8,8 +25,8 @@ export class GeminiService {
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Failed to generate sketches');
+      const error = await this.parseError(response);
+      throw new Error(error);
     }
 
     const data = await response.json();
@@ -24,8 +41,8 @@ export class GeminiService {
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Failed to generate mockup');
+      const error = await this.parseError(response);
+      throw new Error(error);
     }
 
     const data = await response.json();
@@ -40,8 +57,8 @@ export class GeminiService {
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Failed to edit design');
+      const error = await this.parseError(response);
+      throw new Error(error);
     }
 
     const data = await response.json();
