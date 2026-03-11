@@ -14,7 +14,7 @@ const Header: React.FC<HeaderProps> = ({ onBack }) => {
         <h1 className="text-xl font-bold tracking-tighter">情绪定制</h1>
       </div>
       <div className="text-xs font-mono px-3 py-1.5 border border-black/10 rounded-full text-[#0057FF]">
-        团队定制（内测）
+        高级用户定制（内测）
       </div>
     </header>
   );
