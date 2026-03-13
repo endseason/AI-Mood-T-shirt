@@ -87,6 +87,7 @@ data: {"step":"completed","result":{"images":{"mockup":"...","print_asset":"..."
   - `images.print_asset`（light mode 下可能复用 mockup）
   - `pdfs.garment_order`
   - `pdfs.print_order`
+- SSE 心跳：服务端会定期发送 `: ping`（注释行），客户端应忽略
 
 ## 示例（curl）
 
@@ -114,6 +115,49 @@ curl -N -X POST https://www.tire-design.top/api/internal/stream \
 - **Print_Order PDF**：`result.pdfs.print_order`
 
 全部返回值均为 Data URI，可直接保存为文件。
+
+## 推荐配置（快速演示）
+
+适合演示和减少超时：
+
+```json
+{
+  "input": {
+    "type": "topic",
+    "topic_text": "我真的会谢"
+  },
+  "options": {
+    "light_mode": true,
+    "generate_pdf": true
+  }
+}
+```
+
+说明：
+- 先返回 `mockup_ready`，可快速展示
+- PDF 仍会生成，但使用 mockup 作为生产图
+
+## 常见问题 / 故障排查
+
+1. **返回 `Unknown error`**
+- 说明服务端内部异常，可能是 PDF 字体编码或模型响应异常
+- 建议先重试一次；若持续出现，请查看服务端日志
+
+2. **前端/客户端超时**
+- SSE 需要保持长连接，客户端不要提前超时断开
+- 若使用 Vercel 免费额度，请避免并发过高
+
+3. **返回数据过大**
+- Data URI 体积大，客户端应使用流式处理，不要一次性加载到内存
+
+4. **鉴权失败**
+- 检查 `x-internal-token` 与服务端 `INTERNAL_TOKEN` 是否一致
+- 浏览器端不要暴露 token
+
+## 安全约束
+
+- 本接口为内部接口，**严禁前端直接调用**
+- 仅允许可信服务/脚本在服务端环境调用
 
 ## OpenClaw 流式解析示例（伪代码）
 
