@@ -105,7 +105,7 @@ const buildAnalysisFromTopic = (topicText) => ({
   lighting: 'clean studio',
 });
 
-const generateModelImage = async (ai, analysis, customPrompt) => {
+const generateModelImage = async (ai, analysis, customPrompt, imageSize = "1K") => {
   const jsonStr = JSON.stringify(analysis, null, 2);
   const prompt = `You are a high-end fashion AI designer.
 INPUT STYLE CONTEXT: ${jsonStr}
@@ -126,7 +126,7 @@ ${customPrompt ? `- ADDITIONAL USER DIRECTION: ${customPrompt}` : ""}`;
     config: {
       imageConfig: {
         aspectRatio: "3:4",
-        imageSize: "1K",
+        imageSize,
       },
     },
   });
@@ -409,19 +409,25 @@ app.post('/api/internal/stream', async (req, res) => {
       return res.end();
     }
 
-    sendStep({ step: 'render', message: '生成模特效果图...' });
-    const modelImage = await generateModelImage(ai, analysis, options.custom_prompt);
+    sendStep({ step: 'render', message: '生成模特效果图（快速）...' });
+    const modelImage = await generateModelImage(ai, analysis, options.custom_prompt, "512");
 
-    sendStep({ step: 'asset', message: '提取印花资产...' });
-    const printAsset = await extractGraphicAsset(ai, modelImage);
+    let printAsset = '';
+    if (options.generate_print !== false) {
+      sendStep({ step: 'asset', message: '提取印花资产...' });
+      printAsset = await extractGraphicAsset(ai, modelImage);
+    }
 
-    sendStep({ step: 'pdf', message: '生成生产单 PDF...' });
-    const pdfs = await createOrderPdfs({
-      topic: input.topic_text,
-      analysis,
-      modelImageBase64: modelImage,
-      printAssetBase64: printAsset,
-    });
+    let pdfs = {};
+    if (options.generate_pdf !== false) {
+      sendStep({ step: 'pdf', message: '生成生产单 PDF...' });
+      pdfs = await createOrderPdfs({
+        topic: input.topic_text,
+        analysis,
+        modelImageBase64: modelImage,
+        printAssetBase64: printAsset || modelImage,
+      });
+    }
 
     sendStep({
       step: 'completed',
@@ -430,10 +436,12 @@ app.post('/api/internal/stream', async (req, res) => {
           mockup: ensureDataUri(modelImage, 'image/png'),
           print_asset: ensureDataUri(printAsset, 'image/png'),
         },
-        pdfs: {
-          garment_order: pdfs.garmentOrder,
-          print_order: pdfs.printOrder,
-        },
+        pdfs: pdfs.garmentOrder
+          ? {
+              garment_order: pdfs.garmentOrder,
+              print_order: pdfs.printOrder,
+            }
+          : {},
       },
     });
     res.end();
