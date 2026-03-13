@@ -14,7 +14,9 @@ try {
 const express = require('express');
 const path = require('path');
 const { GoogleGenAI, Type } = require("@google/genai");
-const { PDFDocument, StandardFonts, rgb } = require('pdf-lib');
+const QRCode = require('qrcode');
+const puppeteer = require('puppeteer-core');
+const chromium = require('@sparticuz/chromium');
 const app = express();
 
 // Increase JSON limit to handle base64 image strings
@@ -59,7 +61,189 @@ const safeJsonParse = (text, fallback) => {
   }
 };
 
-const safePdfText = (value = '') => value.replace(/[^\x00-\x7F]/g, '').trim();
+const debugError = (error) => {
+  if (typeof error === 'string') {
+    return { message: error };
+  }
+  const message = error?.message || error?.toString?.() || 'Unknown error';
+  return {
+    message,
+    name: error?.name,
+    stack: error?.stack,
+  };
+};
+
+const escapeHtml = (value = '') =>
+  String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
+const DEFAULT_ORDER = {
+  orderNo: 'GD-20260311-0001',
+  sku: 'TRIE-TS-2522-WH',
+  style: '圆领T',
+  color: '白色',
+  material: '280G 重磅棉',
+  resolution: '300DPI',
+  delivery: '48 小时生产',
+  receiver: '张三',
+  phone: '13800000000',
+  address: '上海市徐汇区衡山路 100 号 3 楼',
+  sizes: {
+    小: 6,
+    中: 10,
+    大: 12,
+    加大: 8,
+    特大: 4,
+  },
+  printPositions: ['前', '后', '侧'],
+  printSize: '30×40 厘米',
+  designPreviewUrl: '',
+  designBackUrl: '',
+  designSideUrl: '',
+  designDownloadUrl: 'https://example.com/print-assets/transparent-design.png',
+  notes: '对齐胸前安全区，避免袖口与缝线。',
+};
+
+const buildOrderData = ({ mockupImage, printAssetImage, topic }) => ({
+  ...DEFAULT_ORDER,
+  // Use mockup / print asset as the preview reference
+  designPreviewUrl: printAssetImage || mockupImage || '',
+  designBackUrl: '',
+  designSideUrl: '',
+  // Keep topic in notes if provided for traceability
+  notes: topic ? `${DEFAULT_ORDER.notes} | Topic: ${topic}` : DEFAULT_ORDER.notes,
+});
+
+const renderOrderHtml = ({ type, order, qrDataUrl }) => {
+  const sizes = Object.entries(order.sizes || {});
+  const positions = order.printPositions || [];
+  const preview = order.designPreviewUrl || '';
+  const back = order.designBackUrl || '';
+  const side = order.designSideUrl || '';
+
+  return `<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      @page { size: A4; margin: 0; }
+      html, body { margin: 0; padding: 0; background: #fff; }
+      body { font-family: "PingFang SC", "Noto Sans CJK SC", "Helvetica", "Arial", sans-serif; }
+    </style>
+  </head>
+  <body>
+    <div class="bg-white text-black" style="width: 794px; height: 1123px;">
+      <div class="p-10 h-full flex flex-col gap-6">
+        <div class="flex items-start justify-between">
+          <div>
+            <h1 class="text-2xl font-black tracking-tight">
+              ${type === 'garment' ? 'Garment_Order' : 'Print_Order'}
+            </h1>
+            <p class="text-xs text-zinc-500 font-mono mt-1">订单号：${escapeHtml(order.orderNo)}</p>
+          </div>
+          <div class="text-right">
+            <p class="text-xs text-zinc-500">SKU</p>
+            <p class="text-sm font-bold">${escapeHtml(order.sku)}</p>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4 text-sm">
+          <div class="border border-black/10 rounded-lg p-3">
+            <p class="text-[10px] font-mono text-zinc-500">产品信息</p>
+            <p class="font-semibold">${escapeHtml(order.style)} / ${escapeHtml(order.color)}</p>
+            <p class="text-xs text-zinc-500">${escapeHtml(order.material)}</p>
+            <p class="text-xs text-zinc-500">分辨率：${escapeHtml(order.resolution)}</p>
+          </div>
+          <div class="border border-black/10 rounded-lg p-3">
+            <p class="text-[10px] font-mono text-zinc-500">收件信息</p>
+            <p class="font-semibold">${escapeHtml(order.receiver)} · ${escapeHtml(order.phone)}</p>
+            <p class="text-xs text-zinc-500">${escapeHtml(order.address)}</p>
+          </div>
+        </div>
+
+        ${
+          type === 'garment'
+            ? `<div class="border border-black/10 rounded-lg p-4">
+                <div class="flex items-center justify-between">
+                  <p class="text-[10px] font-mono text-zinc-500">尺码汇总矩阵</p>
+                  <p class="text-xs text-zinc-500">交付：${escapeHtml(order.delivery)}</p>
+                </div>
+                <div class="grid grid-cols-5 gap-2 mt-3">
+                  ${sizes
+                    .map(
+                      ([size, qty]) => `<div class="border border-black/10 rounded-md p-2 text-center">
+                        <p class="text-xs font-semibold">${escapeHtml(size)}</p>
+                        <p class="text-sm font-bold">${escapeHtml(qty)}</p>
+                      </div>`
+                    )
+                    .join('')}
+                </div>
+              </div>`
+            : `<div class="border border-black/10 rounded-lg p-4 flex flex-col gap-4">
+                <div class="flex items-center justify-between">
+                  <div>
+                    <p class="text-[10px] font-mono text-zinc-500">印花位置</p>
+                    <p class="text-sm font-semibold">${escapeHtml(positions.join(' / '))}</p>
+                    <p class="text-xs text-zinc-500">物理尺寸：${escapeHtml(order.printSize)}</p>
+                  </div>
+                  <div class="text-right">
+                    <p class="text-[10px] font-mono text-zinc-500">原图下载</p>
+                    ${qrDataUrl ? `<img src="${qrDataUrl}" alt="二维码" class="w-16 h-16" />` : ''}
+                  </div>
+                </div>
+                <div class="border border-dashed border-black/20 rounded-lg p-4">
+                  <p class="text-[10px] font-mono text-zinc-500">尺寸参考图</p>
+                  <div class="mt-2 grid grid-cols-3 gap-2">
+                    <div class="border border-black/10 rounded-md p-2 text-center">
+                      ${preview ? `<img src="${preview}" alt="前" class="w-full h-24 object-contain" />` : `<span class="text-xs text-zinc-400">前</span>`}
+                    </div>
+                    <div class="border border-black/10 rounded-md p-2 text-center">
+                      ${back ? `<img src="${back}" alt="后" class="w-full h-24 object-contain" />` : `<span class="text-xs text-zinc-400">后</span>`}
+                    </div>
+                    <div class="border border-black/10 rounded-md p-2 text-center">
+                      ${side ? `<img src="${side}" alt="侧" class="w-full h-24 object-contain" />` : `<span class="text-xs text-zinc-400">侧</span>`}
+                    </div>
+                  </div>
+                </div>
+                <div class="text-xs text-zinc-500">备注：${escapeHtml(order.notes)}</div>
+              </div>`
+        }
+
+        <div class="mt-auto text-xs text-zinc-400">
+          TRIE 生产系统 · 自动生成
+        </div>
+      </div>
+    </div>
+  </body>
+</html>`;
+};
+
+const launchBrowser = async () => {
+  const isVercel = Boolean(process.env.VERCEL);
+  if (isVercel) {
+    const executablePath = await chromium.executablePath();
+    return puppeteer.launch({
+      args: chromium.args,
+      defaultViewport: chromium.defaultViewport,
+      executablePath,
+      headless: chromium.headless,
+    });
+  }
+  const localExecutable =
+    process.env.CHROME_PATH ||
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+  return puppeteer.launch({
+    headless: 'new',
+    executablePath: localExecutable,
+    args: ['--no-sandbox', '--disable-setuid-sandbox'],
+  });
+};
 
 const analyzeStyleFromImage = async (ai, imageBase64) => {
   if (process.env.MOCK_GEMINI) {
@@ -214,39 +398,40 @@ const extractGraphicAsset = async (ai, modelImageBase64) => {
 };
 
 const createOrderPdfs = async ({ topic, analysis, modelImageBase64, printAssetBase64 }) => {
-  const buildDoc = async (title, imageDataUri) => {
-    const pdfDoc = await PDFDocument.create();
-    const page = pdfDoc.addPage([595, 842]);
-    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
-    page.drawText(title, { x: 50, y: 800, size: 18, font, color: rgb(0, 0, 0) });
-    const safeTopic = safePdfText(topic || analysis?.theme || 'N/A') || 'N/A';
-    const safeVibe = safePdfText(analysis?.vibe || 'N/A') || 'N/A';
-    page.drawText(`Topic: ${safeTopic}`, { x: 50, y: 770, size: 10, font, color: rgb(0.2, 0.2, 0.2) });
-    page.drawText(`Vibe: ${safeVibe}`, { x: 50, y: 755, size: 10, font, color: rgb(0.2, 0.2, 0.2) });
+  const order = buildOrderData({
+    mockupImage: modelImageBase64,
+    printAssetImage: printAssetBase64,
+    topic: topic || analysis?.theme,
+  });
 
-    if (imageDataUri) {
-      const mime = getMimeFromDataUri(imageDataUri, 'image/png');
-      const imageBytes = dataUriToBytes(imageDataUri);
-      const embedded = mime.includes('jpeg') ? await pdfDoc.embedJpg(imageBytes) : await pdfDoc.embedPng(imageBytes);
-      const { width, height } = embedded.scale(1);
-      const maxWidth = 420;
-      const maxHeight = 420;
-      const scale = Math.min(maxWidth / width, maxHeight / height, 1);
-      const drawWidth = width * scale;
-      const drawHeight = height * scale;
-      const x = 50;
-      const y = 300;
-      page.drawImage(embedded, { x, y, width: drawWidth, height: drawHeight });
-    }
+  const qrDataUrl = await QRCode.toDataURL(order.designDownloadUrl, {
+    width: 160,
+    margin: 1,
+  });
 
-    const pdfBase64 = await pdfDoc.saveAsBase64({ dataUri: true });
-    return pdfBase64;
-  };
+  const browser = await launchBrowser();
+  try {
+    const buildPdf = async (type) => {
+      const html = renderOrderHtml({ type, order, qrDataUrl });
+      const page = await browser.newPage();
+      await page.setContent(html, { waitUntil: 'networkidle0' });
+      const pdfBuffer = await page.pdf({
+        format: 'A4',
+        printBackground: true,
+        preferCSSPageSize: true,
+        margin: { top: '0', right: '0', bottom: '0', left: '0' },
+      });
+      await page.close();
+      const buffer = Buffer.isBuffer(pdfBuffer) ? pdfBuffer : Buffer.from(pdfBuffer);
+      return `data:application/pdf;base64,${buffer.toString('base64')}`;
+    };
 
-  const garmentOrder = await buildDoc('Garment_Order', modelImageBase64);
-  const printOrder = await buildDoc('Print_Order', printAssetBase64);
-
-  return { garmentOrder, printOrder };
+    const garmentOrder = await buildPdf('garment');
+    const printOrder = await buildPdf('print');
+    return { garmentOrder, printOrder };
+  } finally {
+    await browser.close();
+  }
 };
 
 /**
@@ -512,7 +697,9 @@ app.post('/api/internal/stream', async (req, res) => {
     });
     res.end();
   } catch (error) {
-    sendStep({ step: 'error', message: error.message || 'Unknown error' });
+    console.error('[internal/stream] error', error);
+    const detail = debugError(error);
+    sendStep({ step: 'error', message: detail.message, detail });
     res.end();
   } finally {
     clearInterval(heartbeat);
