@@ -48,6 +48,9 @@ const getMimeFromDataUri = (dataUri, fallback = 'image/png') => {
   return match ? match[1] : fallback;
 };
 
+const MOCK_PNG_DATA =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII=';
+
 const safeJsonParse = (text, fallback) => {
   try {
     return JSON.parse(text);
@@ -55,6 +58,8 @@ const safeJsonParse = (text, fallback) => {
     return fallback;
   }
 };
+
+const safePdfText = (value = '') => value.replace(/[^\x00-\x7F]/g, '').trim();
 
 const analyzeStyleFromImage = async (ai, imageBase64) => {
   if (process.env.MOCK_GEMINI) {
@@ -117,8 +122,7 @@ const buildAnalysisFromTopic = (topicText) => ({
 const generateSketchFromAnalysis = async (ai, analysis, customPrompt, imageSize = "1K") => {
   if (process.env.MOCK_GEMINI) {
     console.log('[MOCK_GEMINI] generateSketchFromAnalysis');
-    const payload = Buffer.from('mock-image').toString('base64');
-    return `data:image/png;base64,${payload}`;
+    return MOCK_PNG_DATA;
   }
   const prompt = `Create a streetwear graphic design. Theme: ${analysis.theme}. Vibe: ${analysis.vibe}. Colors: ${analysis.colors?.join(', ') || 'black, white'}. Elements: ${analysis.elements?.join(', ') || 'typography'}. High quality, clean graphic design on a solid background, suitable for silk screen printing. ${customPrompt || ''}`;
 
@@ -146,8 +150,7 @@ const generateSketchFromAnalysis = async (ai, analysis, customPrompt, imageSize 
 const generateMockupWhiteFromDesign = async (ai, designBase64, imageSize = "1K") => {
   if (process.env.MOCK_GEMINI) {
     console.log('[MOCK_GEMINI] generateMockupWhiteFromDesign');
-    const payload = Buffer.from('mock-mockup').toString('base64');
-    return `data:image/png;base64,${payload}`;
+    return MOCK_PNG_DATA;
   }
   const base64Data = stripDataUri(designBase64);
   const prompt = '生成白底T恤图片。';
@@ -175,8 +178,7 @@ const generateMockupWhiteFromDesign = async (ai, designBase64, imageSize = "1K")
 const extractGraphicAsset = async (ai, modelImageBase64) => {
   if (process.env.MOCK_GEMINI) {
     console.log('[MOCK_GEMINI] extractGraphicAsset');
-    const payload = Buffer.from('mock-asset').toString('base64');
-    return `data:image/png;base64,${payload}`;
+    return MOCK_PNG_DATA;
   }
   const prompt = "Identify the core graphic design on the T-shirt in this photo. Re-create ONLY the graphic as a clean, high-resolution 2D digital asset. Requirements: Pure white background (#FFFFFF), centered, perfectly flat, NO human features, NO clothing folds, NO fabric texture, NO perspective distortion. It should be a production-ready print file.";
 
@@ -217,8 +219,10 @@ const createOrderPdfs = async ({ topic, analysis, modelImageBase64, printAssetBa
     const page = pdfDoc.addPage([595, 842]);
     const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
     page.drawText(title, { x: 50, y: 800, size: 18, font, color: rgb(0, 0, 0) });
-    page.drawText(`Topic: ${topic || analysis?.theme || 'N/A'}`, { x: 50, y: 770, size: 10, font, color: rgb(0.2, 0.2, 0.2) });
-    page.drawText(`Vibe: ${analysis?.vibe || 'N/A'}`, { x: 50, y: 755, size: 10, font, color: rgb(0.2, 0.2, 0.2) });
+    const safeTopic = safePdfText(topic || analysis?.theme || 'N/A') || 'N/A';
+    const safeVibe = safePdfText(analysis?.vibe || 'N/A') || 'N/A';
+    page.drawText(`Topic: ${safeTopic}`, { x: 50, y: 770, size: 10, font, color: rgb(0.2, 0.2, 0.2) });
+    page.drawText(`Vibe: ${safeVibe}`, { x: 50, y: 755, size: 10, font, color: rgb(0.2, 0.2, 0.2) });
 
     if (imageDataUri) {
       const mime = getMimeFromDataUri(imageDataUri, 'image/png');
@@ -455,13 +459,23 @@ app.post('/api/internal/stream', async (req, res) => {
     }
 
     const shouldGeneratePrint = lightMode ? false : options.generate_print !== false;
-    const shouldGeneratePdf = lightMode ? false : options.generate_pdf !== false;
+    const shouldGeneratePdf = options.generate_pdf !== false;
 
     sendStep({ step: 'render', message: '生成印花图（轻量）...' });
     const sketchImage = await generateSketchFromAnalysis(ai, analysis, options.custom_prompt, "1K");
 
     sendStep({ step: 'render', message: '生成模特效果图（图生图/轻量）...' });
     const modelImage = await generateMockupWhiteFromDesign(ai, sketchImage, "1K");
+
+    // Emit mockup immediately for "light mode" fast preview usage
+    sendStep({
+      step: 'mockup_ready',
+      result: {
+        images: {
+          mockup: ensureDataUri(modelImage, 'image/png'),
+        },
+      },
+    });
 
     let printAsset = '';
     if (shouldGeneratePrint) {
@@ -476,6 +490,7 @@ app.post('/api/internal/stream', async (req, res) => {
         topic: input.topic_text,
         analysis,
         modelImageBase64: modelImage,
+        // In light mode, reuse mockup as print image to avoid extra extraction step
         printAssetBase64: printAsset || modelImage,
       });
     }
@@ -485,7 +500,7 @@ app.post('/api/internal/stream', async (req, res) => {
       result: {
         images: {
           mockup: ensureDataUri(modelImage, 'image/png'),
-          print_asset: ensureDataUri(printAsset || sketchImage, 'image/png'),
+          print_asset: ensureDataUri(printAsset || modelImage, 'image/png'),
         },
         pdfs: pdfs.garmentOrder
           ? {
