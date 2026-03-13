@@ -82,8 +82,11 @@ data: {"step":"completed","result":{"images":{"mockup":"...","print_asset":"..."
 ### 关键说明
 
 - `mockup_ready`：**mockup 先返回**（适合快速预览）
+  - `images.mockup`：正面平铺白底 T 恤
+  - `images.mockup_back`：背面平铺白底 T 恤（同一件衣服风格一致）
 - `completed`：最终结果，包含
   - `images.mockup`
+  - `images.mockup_back`
   - `images.print_asset`（light mode 下可能复用 mockup）
   - `pdfs.garment_order`
   - `pdfs.print_order`
@@ -110,6 +113,7 @@ curl -N -X POST https://www.tire-design.top/api/internal/stream \
 ## 输出字段
 
 - **Mockup 图片**：`result.images.mockup`
+- **Mockup 背面**：`result.images.mockup_back`
 - **印花资产**：`result.images.print_asset`
 - **Garment_Order PDF**：`result.pdfs.garment_order`
 - **Print_Order PDF**：`result.pdfs.print_order`
@@ -153,6 +157,12 @@ curl -N -X POST https://www.tire-design.top/api/internal/stream \
 4. **鉴权失败**
 - 检查 `x-internal-token` 与服务端 `INTERNAL_TOKEN` 是否一致
 - 浏览器端不要暴露 token
+
+## 生成规则说明
+
+- Mockup 为 **平铺白底 T 恤（无模特）**
+- 同时生成 **正面与背面**，保持为同一件衣服
+- 风格关键词只影响 **图案/色彩风格**，不生成文字
 
 ## 安全约束
 
