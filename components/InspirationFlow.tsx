@@ -14,6 +14,60 @@ const FILTERS = [
   '企业与机构',
 ];
 
+const TODAYTOP_ITEMS = [
+  {
+    kind: 'image' as const,
+    title: '今日灵感 01',
+    imageUrl: '/todaytop/屏幕截图 2026-02-16 221338.png',
+  },
+  {
+    kind: 'text' as const,
+    title: '趋势拼贴',
+    text: '把灵感拆开，再重新组合',
+  },
+  {
+    kind: 'image' as const,
+    title: '今日灵感 02',
+    imageUrl: '/todaytop/屏幕截图 2026-03-05 132528.png',
+  },
+  {
+    kind: 'text' as const,
+    title: '今日上新',
+    text: '新案例持续刷新中',
+  },
+  {
+    kind: 'image' as const,
+    title: '今日灵感 03',
+    imageUrl: '/todaytop/屏幕截图 2026-03-09 093914.png',
+  },
+  {
+    kind: 'text' as const,
+    title: '灵感爆发',
+    text: '让每个画面都更有冲击力',
+  },
+  {
+    kind: 'image' as const,
+    title: '今日灵感 04',
+    imageUrl: '/todaytop/屏幕截图 2026-04-07 231549.png',
+  },
+  {
+    kind: 'text' as const,
+    title: '风格实验',
+    text: '随意组合，保持混乱感',
+  },
+];
+
+const TODAYTOP_STYLES = [
+  'translate-y-0 rotate-[-2deg] w-[96%]',
+  'translate-y-4 rotate-[1.5deg] w-[92%] ml-auto',
+  'translate-y-[-6px] rotate-[-1deg] w-[98%]',
+  'translate-y-3 rotate-[2deg] w-[94%] ml-2',
+  'translate-y-[-2px] rotate-[0.5deg] w-[95%] ml-auto',
+  'translate-y-5 rotate-[-1.5deg] w-[90%]',
+  'translate-y-[-4px] rotate-[1deg] w-[97%] ml-1',
+  'translate-y-2 rotate-[-2deg] w-[93%] ml-auto',
+];
+
 const getDomainLabel = (category: string) => {
   if (!category) return '其他';
   if (category.includes('公司负责人') || category.includes('企业')) return '企业与机构';
@@ -34,7 +88,8 @@ const matchesFilter = (item: InspirationCase, filter: string) => {
 const resolveImageUrl = (url: string) => {
   if (!url) return '';
   if (/^(https?:|data:)/.test(url)) return url;
-  const base = import.meta.env.BASE_URL || '/';
+  // @ts-ignore
+  const base = (typeof import.meta !== 'undefined' && (import.meta as any).env && (import.meta as any).env.BASE_URL) || (typeof process !== 'undefined' && process.env.BASE_URL) || '/';
   const normalizedBase = base.endsWith('/') ? base : `${base}/`;
   const normalizedUrl = url.replace(/^\//, '');
   return `${normalizedBase}${normalizedUrl}`;
@@ -86,6 +141,42 @@ const InspirationFlow: React.FC<Props> = ({ onSelect }) => {
           >
             {filter}
           </button>
+        ))}
+      </div>
+
+      <div className="columns-2 md:columns-4 gap-3 [column-fill:balance]">
+        {TODAYTOP_ITEMS.map((item) => (
+          <div
+            key={item.kind === 'image' ? item.imageUrl : item.title}
+            className={`mb-3 break-inside-avoid rounded-2xl overflow-hidden border border-black/10 bg-transparent shadow-none ${TODAYTOP_STYLES[TODAYTOP_ITEMS.indexOf(item)] || ''}`}
+          >
+            {item.kind === 'image' ? (
+              <button
+                type="button"
+                onClick={() => onSelect(resolveImageUrl(item.imageUrl), item.title)}
+                className="block w-full text-left bg-transparent overflow-hidden cursor-pointer"
+              >
+                <div className="bg-transparent overflow-hidden">
+                  <img
+                    src={encodeURI(item.imageUrl)}
+                    alt={item.title}
+                    className="w-full h-auto block object-contain bg-transparent"
+                    loading="lazy"
+                  />
+                </div>
+                <div className="px-3 py-2 border-t border-black/5 bg-transparent">
+                  <div className="text-sm font-semibold text-zinc-800 leading-tight tracking-wide">{item.title}</div>
+                </div>
+              </button>
+            ) : (
+              <div className="min-h-[120px] md:min-h-[140px] px-4 py-4 flex flex-col justify-between bg-transparent">
+                <div className="text-xs font-mono text-zinc-500 tracking-[0.24em] uppercase">{item.title}</div>
+                <div className="text-[22px] md:text-[28px] leading-[1.05] font-black text-zinc-900 tracking-tight max-w-[10ch]">
+                  {item.text}
+                </div>
+              </div>
+            )}
+          </div>
         ))}
       </div>
 

@@ -17,6 +17,7 @@
     "framer-motion": "^12.35.2",
     "global-agent": "^4.1.2",
     "html2canvas": "^1.4.1",
+    "image-size": "^2.0.2",
     "jspdf": "^4.2.0",
     "lucide-react": "^0.577.0",
     "pdf-lib": "^1.17.1",

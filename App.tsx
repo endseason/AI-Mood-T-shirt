@@ -20,7 +20,8 @@ const App: React.FC = () => {
   };
 
   const handleRecipeSelection = (imageUrl: string, id?: string) => {
-    const recipeUrl = id ? `/images/${id}.jpg` : imageUrl;
+    const isTodayTopImage = imageUrl.includes('/todaytop/');
+    const recipeUrl = isTodayTopImage ? imageUrl : id ? `/images/${id}.jpg` : imageUrl;
     setDesignUrl(recipeUrl);
     setIsRecipeLoading(false);
     setView('EDITOR');

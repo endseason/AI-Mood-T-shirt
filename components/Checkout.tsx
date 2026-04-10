@@ -221,26 +221,47 @@ const OrderTemplate: React.FC<{
             <div className="border border-dashed border-black/20 rounded-lg p-4">
               <p className="text-[10px] font-mono text-zinc-500">尺寸参考图</p>
               <div className="mt-2 grid grid-cols-3 gap-2">
-                <div className="border border-black/10 rounded-md p-2 text-center">
-                  {order.designPreviewUrl ? (
-                    <img src={order.designPreviewUrl} alt="前" className="w-full h-24 object-contain" />
-                  ) : (
-                    <span className="text-xs text-zinc-400">前</span>
-                  )}
+                <div style={{ border: '1px solid rgba(0,0,0,0.1)', borderRadius: '8px', padding: '10px', minHeight: '290px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <div style={{ fontSize: '10px', color: '#71717a', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace' }}>前</div>
+                  <div style={{ flex: 1, minHeight: '240px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    {order.designPreviewUrl ? (
+                      <img
+                        src={order.designPreviewUrl}
+                        alt="前"
+                        style={{ display: 'block', width: '100%', height: '100%', maxHeight: '240px', objectFit: 'contain', objectPosition: 'center' }}
+                      />
+                    ) : (
+                      <div style={{ width: '100%', minHeight: '240px', borderRadius: '8px', background: '#f4f4f5', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#a1a1aa', fontSize: '12px' }}>前 · 默认版型</div>
+                    )}
+                  </div>
                 </div>
-                <div className="border border-black/10 rounded-md p-2 text-center">
-                  {order.designBackUrl ? (
-                    <img src={order.designBackUrl} alt="后" className="w-full h-24 object-contain" />
-                  ) : (
-                    <span className="text-xs text-zinc-400">后</span>
-                  )}
+                <div style={{ border: '1px solid rgba(0,0,0,0.1)', borderRadius: '8px', padding: '10px', minHeight: '290px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <div style={{ fontSize: '10px', color: '#71717a', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace' }}>后</div>
+                  <div style={{ flex: 1, minHeight: '240px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    {order.designBackUrl ? (
+                      <img
+                        src={order.designBackUrl}
+                        alt="后"
+                        style={{ display: 'block', width: '100%', height: '100%', maxHeight: '240px', objectFit: 'contain', objectPosition: 'center' }}
+                      />
+                    ) : (
+                      <div style={{ width: '100%', minHeight: '240px', borderRadius: '8px', background: '#f4f4f5', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#a1a1aa', fontSize: '12px' }}>后 · 默认版型</div>
+                    )}
+                  </div>
                 </div>
-                <div className="border border-black/10 rounded-md p-2 text-center">
-                  {order.designSideUrl ? (
-                    <img src={order.designSideUrl} alt="侧" className="w-full h-24 object-contain" />
-                  ) : (
-                    <span className="text-xs text-zinc-400">侧</span>
-                  )}
+                <div style={{ border: '1px solid rgba(0,0,0,0.1)', borderRadius: '8px', padding: '10px', minHeight: '290px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <div style={{ fontSize: '10px', color: '#71717a', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace' }}>侧</div>
+                  <div style={{ flex: 1, minHeight: '240px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    {order.designSideUrl ? (
+                      <img
+                        src={order.designSideUrl}
+                        alt="侧"
+                        style={{ display: 'block', width: '100%', height: '100%', maxHeight: '240px', objectFit: 'contain', objectPosition: 'center' }}
+                      />
+                    ) : (
+                      <div style={{ width: '100%', minHeight: '240px', borderRadius: '8px', background: '#f4f4f5', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#a1a1aa', fontSize: '12px' }}>侧 · 默认版型</div>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
@@ -351,7 +372,7 @@ const Checkout: React.FC<{ previewImages?: PreviewImages; onBack?: () => void }>
       printSize: mockOrder.printSize,
       designPreviewUrl: effectivePreviews?.front || getMockupPath('front'),
       designBackUrl: effectivePreviews?.back || getMockupPath('back'),
-      designSideUrl: effectivePreviews?.side || undefined,
+      designSideUrl: effectivePreviews?.side || getMockupPath('side'),
       designDownloadUrl: mockOrder.designDownloadUrl,
       notes: notes || mockOrder.notes,
     };
