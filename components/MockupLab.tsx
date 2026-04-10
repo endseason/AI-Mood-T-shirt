@@ -529,7 +529,8 @@ const MockupLab: React.FC<Props> = ({ designUrl, isLoading = false, loadingText 
       const result = await gemini.editDesign(designDataUrl, prompt);
       setCurrentDesign(result);
     } catch (e) {
-      alert('微调失败，请再试一次。');
+      const message = e instanceof Error ? e.message : '未知错误';
+      alert(`微调失败：${message}`);
     }
     setIsUpdating(false);
   };
@@ -1040,11 +1041,18 @@ const MockupLab: React.FC<Props> = ({ designUrl, isLoading = false, loadingText 
               <button
                 onClick={handleGenerate3D}
                 disabled={isUpdating}
-                className={`py-2 rounded-xl text-sm font-medium border ${
+                className={`py-2 rounded-xl text-sm font-medium border flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed ${
                   viewMode === '3D' ? 'bg-black text-white border-black' : 'border-black/10 hover:bg-gray-50'
                 }`}
               >
-                生成上身大片
+                {isUpdating ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" />
+                    生成中...
+                  </>
+                ) : (
+                  '生成上身大片'
+                )}
               </button>
             </div>
           </div>

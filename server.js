@@ -591,7 +591,12 @@ app.post('/api/edit', async (req, res) => {
     }
   } catch (error) {
     console.error("Edit Error:", error);
-    res.status(500).json({ error: error.message });
+    const status = Number.isInteger(error?.status) ? error.status : 500;
+    const detail = debugError(error);
+    res.status(status).json({
+      error: detail.message || 'Edit failed',
+      detail,
+    });
   }
 });
 
