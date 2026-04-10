@@ -1,5 +1,5 @@
 
-require('dotenv').config();
+require('dotenv').config({ override: true });
 // Optional: route all outbound fetch (used by @google/genai) via proxy if set
 try {
   const { setGlobalDispatcher, ProxyAgent } = require('undici');
@@ -18,6 +18,11 @@ const QRCode = require('qrcode');
 const puppeteer = require('puppeteer-core');
 const chromium = require('@sparticuz/chromium');
 const app = express();
+const apiKey = (process.env.API_KEY || '').trim();
+
+if (!apiKey) {
+  console.warn('API key should be set when using the Gemini API.');
+}
 
 // Increase JSON limit to handle base64 image strings
 app.use(express.json({ limit: '10mb' }));
@@ -199,25 +204,30 @@ const renderOrderHtml = ({ type, order, qrDataUrl }) => {
                 </div>
                 <div class="border border-dashed border-black/20 rounded-lg p-4">
                   <p class="text-[10px] font-mono text-zinc-500">尺寸参考图</p>
-                  <div class="mt-2 grid grid-cols-3 gap-2">
-                    <div class="border border-black/10 rounded-md p-2 text-center">
-                      ${preview ? `<img src="${preview}" alt="前" class="w-full h-24 object-contain" />` : `<span class="text-xs text-zinc-400">前</span>`}
+                  <div style="display:flex; flex-direction:column; gap:12px; margin-top:8px;">
+                    <div style="border:1px solid rgba(0,0,0,0.1); border-radius:8px; padding:12px; min-height:280px; display:flex; flex-direction:column; gap:8px;">
+                      <div style="font-size:10px; color:#71717a; font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;">前</div>
+                      <div style="flex:1; display:flex; align-items:center; justify-content:center; min-height:240px;">
+                        ${preview
+                          ? `<img src="${preview}" alt="前" style="display:block; width:100%; max-width:100%; height:auto; max-height:240px; object-fit:contain; object-position:center;" />`
+                          : `<div style="width:100%; min-height:240px; border-radius:8px; background:#f4f4f5; display:flex; align-items:center; justify-content:center; color:#a1a1aa; font-size:12px;">前 · 默认版型</div>`}
+                      </div>
                     </div>
-                    <div class="border border-black/10 rounded-md p-2 text-center">
-                      ${back
-                        ? `<img src="${back}" alt="后" class="w-full h-24 object-contain" />`
-                        : `<div class="w-full h-24 rounded-md bg-zinc-100 flex flex-col items-center justify-center text-zinc-400 text-[10px]">
-                             <div>后</div>
-                             <div>默认版型</div>
-                           </div>`}
+                    <div style="border:1px solid rgba(0,0,0,0.1); border-radius:8px; padding:12px; min-height:280px; display:flex; flex-direction:column; gap:8px;">
+                      <div style="font-size:10px; color:#71717a; font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;">后</div>
+                      <div style="flex:1; display:flex; align-items:center; justify-content:center; min-height:240px;">
+                        ${back
+                          ? `<img src="${back}" alt="后" style="display:block; width:100%; max-width:100%; height:auto; max-height:240px; object-fit:contain; object-position:center;" />`
+                          : `<div style="width:100%; min-height:240px; border-radius:8px; background:#f4f4f5; display:flex; align-items:center; justify-content:center; color:#a1a1aa; font-size:12px;">后 · 默认版型</div>`}
+                      </div>
                     </div>
-                    <div class="border border-black/10 rounded-md p-2 text-center">
-                      ${side
-                        ? `<img src="${side}" alt="侧" class="w-full h-24 object-contain" />`
-                        : `<div class="w-full h-24 rounded-md bg-zinc-100 flex flex-col items-center justify-center text-zinc-400 text-[10px]">
-                             <div>侧</div>
-                             <div>默认版型</div>
-                           </div>`}
+                    <div style="border:1px solid rgba(0,0,0,0.1); border-radius:8px; padding:12px; min-height:280px; display:flex; flex-direction:column; gap:8px;">
+                      <div style="font-size:10px; color:#71717a; font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;">侧</div>
+                      <div style="flex:1; display:flex; align-items:center; justify-content:center; min-height:240px;">
+                        ${side
+                          ? `<img src="${side}" alt="侧" style="display:block; width:100%; max-width:100%; height:auto; max-height:240px; object-fit:contain; object-position:center;" />`
+                          : `<div style="width:100%; min-height:240px; border-radius:8px; background:#f4f4f5; display:flex; align-items:center; justify-content:center; color:#a1a1aa; font-size:12px;">侧 · 默认版型</div>`}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -456,7 +466,7 @@ const createOrderPdfs = async ({ topic, analysis, modelImageBase64, printAssetBa
 app.post('/api/sketches', async (req, res) => {
   try {
     const { prompt, vibe } = req.body;
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = new GoogleGenAI({ apiKey });
     const finalPrompt = `Create a streetwear graphic design. Style: ${vibe}. Theme: ${prompt}. High quality, clean graphic design on a solid background, suitable for silk screen printing. Unique variation.`;
 
     const result = await ai.models.generateContent({
@@ -481,7 +491,8 @@ app.post('/api/sketches', async (req, res) => {
 app.post('/api/mockup', async (req, res) => {
   try {
   const { designBase64, garmentType } = req.body;
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const imageSize = req.body?.imageSize || '1K';
+    const ai = new GoogleGenAI({ apiKey });
     const base64Data = designBase64.split(',')[1];
     
     const positionMap = {
@@ -522,7 +533,7 @@ app.post('/api/mockup', async (req, res) => {
 app.post('/api/mockup-white', async (req, res) => {
   try {
     const { designBase64 } = req.body;
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = new GoogleGenAI({ apiKey });
     const base64Data = designBase64.split(',')[1];
 
     const prompt = '生成白底T恤图片。';
@@ -556,7 +567,7 @@ app.post('/api/mockup-white', async (req, res) => {
 app.post('/api/edit', async (req, res) => {
   try {
     const { originalImageBase64, instruction } = req.body;
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = new GoogleGenAI({ apiKey });
     const base64Data = originalImageBase64.split(',')[1];
     
     const response = await ai.models.generateContent({

@@ -221,26 +221,47 @@ const OrderTemplate: React.FC<{
             <div className="border border-dashed border-black/20 rounded-lg p-4">
               <p className="text-[10px] font-mono text-zinc-500">尺寸参考图</p>
               <div className="mt-2 grid grid-cols-3 gap-2">
-                <div className="border border-black/10 rounded-md p-2 text-center">
-                  {order.designPreviewUrl ? (
-                    <img src={order.designPreviewUrl} alt="前" className="w-full h-24 object-contain" />
-                  ) : (
-                    <span className="text-xs text-zinc-400">前</span>
-                  )}
+                <div style={{ border: '1px solid rgba(0,0,0,0.1)', borderRadius: '8px', padding: '10px', minHeight: '290px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <div style={{ fontSize: '10px', color: '#71717a', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace' }}>前</div>
+                  <div style={{ flex: 1, minHeight: '240px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    {order.designPreviewUrl ? (
+                      <img
+                        src={order.designPreviewUrl}
+                        alt="前"
+                        style={{ display: 'block', width: '100%', height: '100%', maxHeight: '240px', objectFit: 'contain', objectPosition: 'center' }}
+                      />
+                    ) : (
+                      <div style={{ width: '100%', minHeight: '240px', borderRadius: '8px', background: '#f4f4f5', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#a1a1aa', fontSize: '12px' }}>前 · 默认版型</div>
+                    )}
+                  </div>
                 </div>
-                <div className="border border-black/10 rounded-md p-2 text-center">
-                  {order.designBackUrl ? (
-                    <img src={order.designBackUrl} alt="后" className="w-full h-24 object-contain" />
-                  ) : (
-                    <span className="text-xs text-zinc-400">后</span>
-                  )}
+                <div style={{ border: '1px solid rgba(0,0,0,0.1)', borderRadius: '8px', padding: '10px', minHeight: '290px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <div style={{ fontSize: '10px', color: '#71717a', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace' }}>后</div>
+                  <div style={{ flex: 1, minHeight: '240px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    {order.designBackUrl ? (
+                      <img
+                        src={order.designBackUrl}
+                        alt="后"
+                        style={{ display: 'block', width: '100%', height: '100%', maxHeight: '240px', objectFit: 'contain', objectPosition: 'center' }}
+                      />
+                    ) : (
+                      <div style={{ width: '100%', minHeight: '240px', borderRadius: '8px', background: '#f4f4f5', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#a1a1aa', fontSize: '12px' }}>后 · 默认版型</div>
+                    )}
+                  </div>
                 </div>
-                <div className="border border-black/10 rounded-md p-2 text-center">
-                  {order.designSideUrl ? (
-                    <img src={order.designSideUrl} alt="侧" className="w-full h-24 object-contain" />
-                  ) : (
-                    <span className="text-xs text-zinc-400">侧</span>
-                  )}
+                <div style={{ border: '1px solid rgba(0,0,0,0.1)', borderRadius: '8px', padding: '10px', minHeight: '290px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <div style={{ fontSize: '10px', color: '#71717a', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace' }}>侧</div>
+                  <div style={{ flex: 1, minHeight: '240px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    {order.designSideUrl ? (
+                      <img
+                        src={order.designSideUrl}
+                        alt="侧"
+                        style={{ display: 'block', width: '100%', height: '100%', maxHeight: '240px', objectFit: 'contain', objectPosition: 'center' }}
+                      />
+                    ) : (
+                      <div style={{ width: '100%', minHeight: '240px', borderRadius: '8px', background: '#f4f4f5', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#a1a1aa', fontSize: '12px' }}>侧 · 默认版型</div>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
@@ -272,6 +293,7 @@ const Checkout: React.FC<{ previewImages?: PreviewImages; onBack?: () => void }>
   const [view, setView] = useState<CheckoutView>('checkout');
   const [deliveryMode, setDeliveryMode] = useState<DeliveryMode>('delivery');
   const [previewSide, setPreviewSide] = useState<PreviewSide>('front');
+  const [gender, setGender] = useState<'male' | 'female'>('male');
   const [showSizeGuide, setShowSizeGuide] = useState(false);
   const [recommendedSize, setRecommendedSize] = useState<string | null>(null);
   const [notes, setNotes] = useState('');
@@ -317,6 +339,17 @@ const Checkout: React.FC<{ previewImages?: PreviewImages; onBack?: () => void }>
     return list.length ? list : ['前'];
   }, [effectivePreviews]);
 
+  const getMockupPath = (side: 'front' | 'back' | 'side') => {
+    if (gender === 'female') {
+      if (side === 'front') return '/mockups/wfront.jpg';
+      if (side === 'back') return '/mockups/wback.jpg';
+      return '/mockups/wside.jpg';
+    }
+    if (side === 'front') return '/mockups/front.jpg';
+    if (side === 'back') return '/mockups/back.jpg';
+    return '/mockups/side.jpg';
+  };
+
   const orderData = useMemo<OrderData>(() => {
     const receiver = address.name || mockOrder.receiver;
     const phone = address.phone || mockOrder.phone;
@@ -337,18 +370,33 @@ const Checkout: React.FC<{ previewImages?: PreviewImages; onBack?: () => void }>
       sizes: orderSizes,
       printPositions: positions,
       printSize: mockOrder.printSize,
-      designPreviewUrl: effectivePreviews?.front || mockOrder.designPreviewUrl,
-      designBackUrl: effectivePreviews?.back || mockOrder.designBackUrl,
-      designSideUrl: effectivePreviews?.side,
+      designPreviewUrl: effectivePreviews?.front || getMockupPath('front'),
+      designBackUrl: effectivePreviews?.back || getMockupPath('back'),
+      designSideUrl: effectivePreviews?.side || getMockupPath('side'),
       designDownloadUrl: mockOrder.designDownloadUrl,
       notes: notes || mockOrder.notes,
     };
-  }, [address, deliveryMode, orderSizes, positions, effectivePreviews, notes]);
+  }, [address, deliveryMode, orderSizes, positions, effectivePreviews, notes, gender]);
 
   useEffect(() => {
     QRCode.toDataURL(mockOrder.designDownloadUrl, { width: 160, margin: 1 })
       .then(setQrDataUrl)
       .catch(() => setQrDataUrl(''));
+  }, []);
+
+  // 监听来自 MockupLab 的性别切换事件（嵌入页面右侧按钮）
+  useEffect(() => {
+    const handler = (e: Event) => {
+      try {
+        // @ts-ignore
+        const g = (e as CustomEvent)?.detail?.gender;
+        if (g === 'male' || g === 'female') setGender(g);
+      } catch {
+        // ignore
+      }
+    };
+    window.addEventListener('trie:gender-change', handler as EventListener);
+    return () => window.removeEventListener('trie:gender-change', handler as EventListener);
   }, []);
 
   useEffect(() => {
@@ -571,6 +619,20 @@ const Checkout: React.FC<{ previewImages?: PreviewImages; onBack?: () => void }>
             <p className="text-sm text-zinc-500">{mockOrder.color} · {mockOrder.style}</p>
           </div>
           <div className="flex gap-2">
+            <div className="flex items-center gap-2 mr-2">
+              <button
+                onClick={() => setGender('male')}
+                className={`px-3 py-1 rounded-full text-xs border ${gender === 'male' ? 'bg-black text-white border-black' : 'border-black/10'}`}
+              >
+                男
+              </button>
+              <button
+                onClick={() => setGender('female')}
+                className={`px-3 py-1 rounded-full text-xs border ${gender === 'female' ? 'bg-black text-white border-black' : 'border-black/10'}`}
+              >
+                女
+              </button>
+            </div>
             <button
               onClick={() => setPreviewSide('front')}
               className={`px-3 py-1 rounded-full text-xs border ${previewSide === 'front' ? 'bg-black text-white border-black' : 'border-black/10'}`}
